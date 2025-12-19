@@ -23,7 +23,7 @@ app.use(
 // ================= COMPRESSION =================
 app.use(compression());
 
-// ================= CORS (FIX FINAL) =================
+// ================= CORS (FINAL & STABIL) =================
 const allowedOrigins = [
   "https://frontend-bpkad-garut-transparency-steel.vercel.app",
   "http://localhost:3000",
@@ -32,24 +32,22 @@ const allowedOrigins = [
 
 app.use(
   cors({
-    origin: function (origin, callback) {
-      // allow server-to-server, postman, curl
+    origin: (origin, callback) => {
+      // allow postman, curl, server-to-server
       if (!origin) return callback(null, true);
 
       if (allowedOrigins.includes(origin)) {
         return callback(null, true);
-      } else {
-        return callback(new Error("Not allowed by CORS"));
       }
+
+      // block silently (browser will handle)
+      return callback(null, false);
     },
-    credentials: false, // 🔥 JANGAN TRUE
+    credentials: false, // JWT via Authorization header
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
-
-// Handle preflight
-app.options("*", cors());
 
 // ================= BODY PARSER =================
 app.use(express.json({ limit: "10mb" }));
@@ -77,16 +75,16 @@ app.get("/", (req, res) => {
 });
 
 // ================= ROUTES =================
+app.use("/api/auth", require("./routes/auth"));
 app.use("/api/dashboard", require("./routes/dashboard"));
 app.use("/api/apbd", require("./routes/apbd"));
-app.use("/api/auth", require("./routes/auth"));
 app.use("/api/admin", require("./routes/admin"));
 app.use("/api/user-management", require("./routes/user-management"));
 app.use("/api/tahun-anggaran", require("./routes/tahun-anggaran"));
 app.use("/api/kategori-apbd", require("./routes/kategori-apbd"));
 app.use("/api/transaksi-apbd", require("./routes/transaksi-apbd"));
 
-// ================= HEALTH =================
+// ================= HEALTH CHECK =================
 app.get("/health", async (req, res) => {
   try {
     await prisma.$queryRaw`SELECT 1`;
@@ -106,8 +104,9 @@ app.get("/health", async (req, res) => {
 
 // ================= ERROR HANDLER =================
 app.use((err, req, res, next) => {
-  console.error(err.message);
+  console.error("ERROR:", err.message);
   res.status(500).json({
+    success: false,
     error: "Internal Server Error",
     message:
       process.env.NODE_ENV === "development"
@@ -118,7 +117,10 @@ app.use((err, req, res, next) => {
 
 // ================= 404 =================
 app.use("*", (req, res) => {
-  res.status(404).json({ error: "Route not found" });
+  res.status(404).json({
+    success: false,
+    error: "Route not found",
+  });
 });
 
 // ================= SERVER =================
