@@ -5,37 +5,42 @@ const router = express.Router();
 const { prisma } = require("../config/database");
 const { handleError } = require("../utils/helpers");
 
-// JWT Secret (in production, use environment variable)
 const JWT_SECRET =
   process.env.JWT_SECRET || "your-secret-key-change-in-production";
 
+// =======================
+// Middleware JWT
+// =======================
 const authenticateToken = (req, res, next) => {
-  const authHeader = req.headers["authorization"];
+  const authHeader = req.headers.authorization;
   const token = authHeader && authHeader.split(" ")[1];
 
   if (!token) {
-    return res
-      .status(401)
-      .json({ success: false, error: "Access token required" });
+    return res.status(401).json({
+      success: false,
+      error: "Access token required",
+    });
   }
 
   jwt.verify(token, JWT_SECRET, (err, user) => {
     if (err) {
-      return res
-        .status(403)
-        .json({ success: false, error: "Invalid or expired token" });
+      return res.status(403).json({
+        success: false,
+        error: "Invalid or expired token",
+      });
     }
+
     req.user = user;
     next();
   });
 };
 
+// =======================
+// POST /login
+// =======================
 router.post("/login", async (req, res) => {
   try {
     const { username, password } = req.body;
-
-    res.header("Access-Control-Allow-Origin", process.env.FRONTEND_URL || "http://localhost:3000");
-    res.header("Access-Control-Allow-Credentials", "true");
 
     if (!username || !password) {
       return res.status(400).json({
@@ -44,15 +49,11 @@ router.post("/login", async (req, res) => {
       });
     }
 
-    console.log(" Login attempt for username:", username);
-
-    // Find admin user
     const admin = await prisma.admin.findUnique({
       where: { username },
     });
 
     if (!admin) {
-      console.log(" Admin not found for username:", username);
       return res.status(401).json({
         success: false,
         error: "Username tidak ditemukan",
@@ -61,32 +62,27 @@ router.post("/login", async (req, res) => {
 
     let isValidPassword = false;
 
-    // Check if password is already hashed (starts with $2b$ for bcrypt)
     if (admin.passwordHash.startsWith("$2b$")) {
       isValidPassword = await bcrypt.compare(password, admin.passwordHash);
     } else {
-      // For plain text passwords in database (temporary during migration)
       isValidPassword = password === admin.passwordHash;
 
-      // If login successful with plain text, hash it for future use
       if (isValidPassword) {
-        const hashedPassword = await bcrypt.hash(password, 10);
+        const hashed = await bcrypt.hash(password, 10);
         await prisma.admin.update({
           where: { idAdmin: admin.idAdmin },
-          data: { passwordHash: hashedPassword },
+          data: { passwordHash: hashed },
         });
       }
     }
 
     if (!isValidPassword) {
-      console.log(" Invalid password for username:", username);
       return res.status(401).json({
         success: false,
         error: "Password salah",
       });
     }
 
-    // Generate JWT token
     const token = jwt.sign(
       {
         idAdmin: admin.idAdmin,
@@ -97,10 +93,10 @@ router.post("/login", async (req, res) => {
       { expiresIn: "24h" }
     );
 
-    console.log(" Login successful for username:", username);
-
-    res.json({
+    // ✅ RESPONSE KONSISTEN & JELAS
+    return res.status(200).json({
       success: true,
+      message: "Login successful",
       data: {
         user: {
           idAdmin: admin.idAdmin,
@@ -109,17 +105,18 @@ router.post("/login", async (req, res) => {
         },
         token,
       },
-      message: "Login successful",
     });
   } catch (error) {
-    console.error(" Login error:", error);
+    console.error("Login error:", error);
     handleError(res, error, "Login failed");
   }
 });
 
+// =======================
+// GET /verify
+// =======================
 router.get("/verify", authenticateToken, async (req, res) => {
   try {
-    // Get user info from token
     const admin = await prisma.admin.findUnique({
       where: { idAdmin: req.user.idAdmin },
       select: {
@@ -136,28 +133,23 @@ router.get("/verify", authenticateToken, async (req, res) => {
       });
     }
 
-    res.json({
+    return res.status(200).json({
       success: true,
-      data: {
-        user: admin,
-      },
+      data: { user: admin },
     });
   } catch (error) {
     handleError(res, error, "Token verification failed");
   }
 });
 
-router.post("/logout", authenticateToken, async (req, res) => {
-  try {
-    // In a more sophisticated setup, you might want to blacklist the token
-    // For now, we'll just return success and let the client handle token removal
-    res.json({
-      success: true,
-      message: "Logout successful",
-    });
-  } catch (error) {
-    handleError(res, error, "Logout failed");
-  }
+// =======================
+// POST /logout
+// =======================
+router.post("/logout", authenticateToken, (req, res) => {
+  return res.status(200).json({
+    success: true,
+    message: "Logout successful",
+  });
 });
 
 module.exports = router;
